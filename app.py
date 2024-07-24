@@ -6,15 +6,15 @@ from sentence_transformers import SentenceTransformer, util
 import numpy as np
 import faiss
 
+
 client = InferenceClient("HuggingFaceH4/zephyr-7b-beta")
 
-# Placeholder for the app's state
 class MyApp:
     def __init__(self) -> None:
         self.documents = []
         self.embeddings = None
         self.index = None
-        self.load_pdf("THEDIA1.pdf")
+        self.load_pdf("Education_Tutor_for_engineering_students.pdf")
         self.build_vector_db()
 
     def load_pdf(self, file_path: str) -> None:
@@ -30,30 +30,37 @@ class MyApp:
     def build_vector_db(self) -> None:
         """Builds a vector database using the content of the PDF."""
         model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Generate embeddings for all document contents
         self.embeddings = model.encode([doc["content"] for doc in self.documents])
+        # Create a FAISS index
         self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
+        # Add the embeddings to the index
         self.index.add(np.array(self.embeddings))
         print("Vector database built successfully!")
 
     def search_documents(self, query: str, k: int = 3) -> List[str]:
         """Searches for relevant documents using vector similarity."""
         model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Generate an embedding for the query
         query_embedding = model.encode([query])
+        # Perform a search in the FAISS index
         D, I = self.index.search(np.array(query_embedding), k)
+        # Retrieve the top-k documents
         results = [self.documents[i]["content"] for i in I[0]]
         return results if results else ["No relevant documents found."]
 
 app = MyApp()
+   
 
 def respond(
-    message: str,
-    history: List[Tuple[str, str]],
-    system_message: str,
-    max_tokens: int,
-    temperature: float,
-    top_p: float,
+    message,
+    history: list[tuple[str, str]],
+    system_message,
+    max_tokens,
+    temperature,
+    top_p,
 ):
-    system_message = "You are a knowledgeable DBT coach. You always talk about one options at at a time. you add greetings and you ask questions like real counsellor. Remember you are helpful and a good listener. You are concise and never ask multiple questions, or give long response. You response like a human counsellor accurately and correctly. consider the users as your client. and practice verbal cues only where needed. Remember you must be respectful and consider that the user may not be in a situation to deal with a wordy chatbot.  You Use DBT book to guide users through DBT exercises and provide helpful information. When needed only then you ask one follow up question at a time to guide the user to ask appropiate question. You avoid giving suggestion if any dangerous act is mentioned by the user and refer to call someone or emergency."
+    system_message = "You are a educational tutor for engineering students. You support learning journey in engineering, helping with complex concepts, exam preparation tips or guide through steps to make project.Discuss what's on your mind and ask me for a quick guidance in studies."
     messages = [{"role": "system", "content": system_message}]
 
     for val in history:
@@ -64,44 +71,62 @@ def respond(
 
     messages.append({"role": "user", "content": message})
 
-    # RAG - Retrieve relevant documents
-    retrieved_docs = app.search_documents(message)
-    context = "\n".join(retrieved_docs)
-    messages.append({"role": "system", "content": "Relevant documents: " + context})
-
     response = ""
+
     for message in client.chat_completion(
         messages,
-        max_tokens=100,
+        max_tokens=max_tokens,
         stream=True,
-        temperature=0.98,
-        top_p=0.7,
+        temperature=temperature,
+        top_p=top_p,
     ):
         token = message.choices[0].delta.content
+
         response += token
         yield response
 
-demo = gr.Blocks()
+"""
+For information on how to customize the ChatInterface, peruse the gradio docs: https://www.gradio.app/docs/chatinterface
+"""
+demo = gr.ChatInterface(
+    respond,
+    additional_inputs=[
+        gr.Textbox(value = "You are a educational tutor for engineering students. You support learning journey in engineering, helping with complex concepts, exam preparation tips or guide through steps to make project.Discuss what's on your mind and ask me for a quick guidance in studies."),
+        gr.Slider(minimum=1, maximum=2048, value=512, step=1, label="Max new tokens"),
+        gr.Slider(minimum=0.1, maximum=4.0, value=0.7, step=0.1, label="Temperature"),
+        gr.Slider(
+            minimum=0.1,
+            maximum=1.0,
+            value=0.95,
+            step=0.05,
+            label="Top-p (nucleus sampling)",
+        ),
+    ],
 
-with demo:
-    gr.Markdown(
-        "‼️Disclaimer: This chatbot is based on a DBT exercise book that is publicly available. and just to test RAG implementation.‼️"
-    )
-    
-    chatbot = gr.ChatInterface(
-        respond,
-        examples=[
-            ["I feel overwhelmed with work."],
-            ["Can you guide me through a quick meditation?"],
-            ["How do I stop worrying about things I can't control?"],
-            ["What are some DBT skills for managing anxiety?"],
-            ["Can you explain mindfulness in DBT?"],
-            ["I am interested in DBT excercises"],
-            ["I feel restless. Please help me."],
-            ["I have destructive thoughts coming to my mind repetatively."]
-        ],
-        title='Dialectical Behaviour Therapy Assistant👩‍⚕️🧘‍♀️'
-    )
+    examples = [ 
+        ["I feel struggled with engineering concepts"],
+        ["Can you guide me through a quick steps to make a python project"],
+        ["can you describe basic components of electrical circuits and their functions"],
+        ["What are the principles of mechanics"],
+        ["Which programming language is used by most of the companies and how can I learn it?"],
+        ["What are different queries that are commonly used in SQL?"],
+        ["How can I do surveying and mapping in civil engineering?"],
+        ["How many research papers are published on Artificial Intelligence?"],
+        ["How can I crack a entry-level exam of JEE?"],
+        ["Can you please give the roadmap of C++ for beginner who don't know anything about coding"],
+        ["How can I build an application using RAG for LLM chatbot?"],
+        ["Display step by step guide to install active directory on windows server?"],
+        ["Define DHCP, DNS, TCP/IP"],
+        ["What are the different topics and from where I have to study for passing Comp TIA A+ exam"],
+        ["Disply all the information about Loops in all programming languages"],
+        ["what I need to configure and test VPN on the windows server?"],
+        ["Display all the information about the basics of Python Language"],
+        ["Display different certificates do I need to get a entry-level job in IT with no experience"],
+        ["How can I handle my coursework with other commitments ?"]
+    ],
+    title = '📝🖋️Educational Tutor for Engineering Students📝🖋️'
+)
+
 
 if __name__ == "__main__":
     demo.launch()
